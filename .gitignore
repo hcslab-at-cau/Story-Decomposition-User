@@ -34,3 +34,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# generated verification artifacts
+/artifacts/
+
+# uploaded source files can be large
+/data/uploads/*
+!/data/uploads/.gitkeep
+
+# local study login secrets
+/secrets/
