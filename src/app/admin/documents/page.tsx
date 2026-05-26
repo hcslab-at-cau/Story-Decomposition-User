@@ -176,7 +176,7 @@ export default function AdminDocumentsPage() {
         </button>
       </div>
 
-      <section className="grid two">
+      <section className="grid two documents-layout">
         <div className="grid">
           <form className="card form-grid" onSubmit={submit}>
             <h2>{t("upload")}</h2>
@@ -308,7 +308,7 @@ export default function AdminDocumentsPage() {
           </div>
         </div>
 
-        <aside className="card">
+        <aside className="card document-preview-card">
           <h2>{t("chapterPreview")}</h2>
           {selectedDocument ? (
             <div className="grid">

@@ -6,6 +6,7 @@ import {
   deleteDocumentBundle,
   ensureDataDirs,
   getDocument,
+  isFirestoreDataStore,
   listDocuments,
   saveDocument,
   uploadPath,
@@ -65,7 +66,10 @@ export async function POST(request: Request) {
   }
 
   const buffer = Buffer.from(await file.arrayBuffer())
-  await writeFile(uploadPath(file.name), buffer)
+
+  if (!isFirestoreDataStore()) {
+    await writeFile(uploadPath(file.name), buffer)
+  }
 
   const lowerName = file.name.toLowerCase()
   const document = lowerName.endsWith(".epub")

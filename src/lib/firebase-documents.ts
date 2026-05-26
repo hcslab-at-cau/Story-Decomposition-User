@@ -2,7 +2,9 @@ import type { DocumentData, DocumentReference, QueryDocumentSnapshot } from "fir
 
 import { getAdminDb, explainAdminCredentialError } from "@/lib/firebase-admin"
 import { slugifyId } from "@/lib/ids"
+import { state3ToPrediction } from "@/lib/segmentation/state3-import"
 import type { Chapter, NarrativeDocument, Paragraph } from "@/types/document"
+import type { Prediction } from "@/types/prediction"
 
 export type FirebaseDataSource = "current" | "legacy"
 
@@ -25,6 +27,12 @@ interface Pre2Unit {
 
 interface Pre2Artifact {
   units?: Pre2Unit[]
+}
+
+interface LoadedStageArtifact {
+  artifact_id?: string
+  payload: Record<string, unknown>
+  run_id: string
 }
 
 const CURRENT_DOCUMENTS_COLLECTION = "documents_v2"
@@ -99,6 +107,42 @@ export async function importFirebaseDocument(
       source_file: `firebase:${collectionName(source)}/${docId}`,
       created_at: readDate(documentData.createdAt ?? documentData.created_at) ?? new Date().toISOString(),
       chapters,
+    }
+  })
+}
+
+export async function importFirebaseState3Prediction(
+  document: NarrativeDocument,
+  chapterId: string,
+): Promise<Prediction> {
+  return withAdminErrorContext(async () => {
+    const source = firebaseSourceFromDocument(document)
+    const chapterRef = documentsCollection(source.source).doc(source.docId).collection("chapters").doc(chapterId)
+    const chapterSnap = await chapterRef.get()
+
+    if (!chapterSnap.exists) {
+      throw new Error(`Firebase chapter not found: ${source.docId}/${chapterId}`)
+    }
+
+    const state3 = await loadStageArtifact(chapterRef, "state3")
+
+    if (!state3) {
+      throw new Error(`No STATE.3 artifact was found for ${document.title}/${chapterId}.`)
+    }
+
+    const prediction = state3ToPrediction(document.doc_id, chapterId, state3.payload)
+
+    return {
+      ...prediction,
+      prediction_id: `state3_${document.doc_id}_${chapterId}_${state3.artifact_id ?? state3.run_id}`,
+      params: {
+        ...prediction.params,
+        source: "Firebase STATE.3",
+        firebase_collection: collectionName(source.source),
+        firebase_doc_id: source.docId,
+        firebase_run_id: state3.run_id,
+        firebase_artifact_id: state3.artifact_id,
+      },
     }
   })
 }
@@ -200,6 +244,14 @@ async function hasPre2Artifact(chapterRef: DocumentReference<DocumentData>) {
 }
 
 async function loadPre2Artifact(chapterRef: DocumentReference<DocumentData>): Promise<Pre2Artifact | null> {
+  const artifact = await loadStageArtifact(chapterRef, "pre2")
+  return artifact ? parsePre2Artifact(artifact.payload) : null
+}
+
+async function loadStageArtifact(
+  chapterRef: DocumentReference<DocumentData>,
+  stageKey: string,
+): Promise<LoadedStageArtifact | null> {
   const runsSnap = await chapterRef.collection("runs").get()
   const runs = runsSnap.docs.sort((left, right) => {
     const leftData = left.data()
@@ -212,20 +264,37 @@ async function loadPre2Artifact(chapterRef: DocumentReference<DocumentData>): Pr
   for (const runSnap of runs) {
     const runData = runSnap.data()
     const stageRefs = readObject(runData.stageRefs)
-    const sharedPre2ArtifactId = readString(stageRefs?.pre2)
+    const sharedArtifactId = readString(stageRefs?.[stageKey])
 
-    if (sharedPre2ArtifactId) {
-      const artifactSnap = await chapterRef.collection("artifacts").doc(sharedPre2ArtifactId).get()
-      const artifact = parsePre2Artifact(artifactPayloadFromDoc(artifactSnap.data()))
-      if (artifact) return artifact
+    if (sharedArtifactId) {
+      const artifactSnap = await chapterRef.collection("artifacts").doc(sharedArtifactId).get()
+      const payload = readObject(artifactPayloadFromDoc(artifactSnap.data()))
+      if (payload) {
+        return {
+          artifact_id: sharedArtifactId,
+          payload,
+          run_id: runSnap.id,
+        }
+      }
     }
 
-    const runArtifactSnap = await runSnap.ref.collection("artifacts").doc("pre2").get()
-    const runArtifact = parsePre2Artifact(artifactPayloadFromDoc(runArtifactSnap.data()))
-    if (runArtifact) return runArtifact
+    const runArtifactSnap = await runSnap.ref.collection("artifacts").doc(stageKey).get()
+    const runArtifact = readObject(artifactPayloadFromDoc(runArtifactSnap.data()))
+    if (runArtifact) {
+      return {
+        artifact_id: stageKey,
+        payload: runArtifact,
+        run_id: runSnap.id,
+      }
+    }
 
-    const inlineArtifact = parsePre2Artifact(runData.pre2)
-    if (inlineArtifact) return inlineArtifact
+    const inlineArtifact = readObject(runData[stageKey])
+    if (inlineArtifact) {
+      return {
+        payload: inlineArtifact,
+        run_id: runSnap.id,
+      }
+    }
   }
 
   return null
@@ -298,6 +367,19 @@ function readableTitle(raw: Record<string, unknown>, data: DocumentData) {
 
 function safeLocalDocId(docId: string) {
   return /^[a-zA-Z0-9_-]+$/.test(docId) ? docId : slugifyId(docId, "firebase-document")
+}
+
+function firebaseSourceFromDocument(document: NarrativeDocument): { source: FirebaseDataSource; docId: string } {
+  const match = document.source_file?.match(/^firebase:(documents_v2|documents)\/([^/]+)$/)
+
+  if (!match) {
+    throw new Error(`${document.title} was not imported from Firebase.`)
+  }
+
+  return {
+    source: match[1] === LEGACY_DOCUMENTS_COLLECTION ? "legacy" : "current",
+    docId: match[2],
+  }
 }
 
 function readObject(value: unknown): Record<string, unknown> | null {

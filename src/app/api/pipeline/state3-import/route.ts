@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
-import { savePrediction } from "@/lib/data/fs-store"
+import { getDocument, savePrediction } from "@/lib/data/fs-store"
+import { importFirebaseState3Prediction } from "@/lib/firebase-documents"
 import { state3ToPrediction } from "@/lib/segmentation/state3-import"
 
 export const runtime = "nodejs"
@@ -12,11 +13,19 @@ export async function POST(request: Request) {
     state3?: unknown
   }
 
-  if (!body.doc_id || !body.chapter_id || !body.state3) {
-    return NextResponse.json({ error: "doc_id, chapter_id, and state3 are required" }, { status: 400 })
+  if (!body.doc_id || !body.chapter_id) {
+    return NextResponse.json({ error: "doc_id and chapter_id are required" }, { status: 400 })
   }
 
-  const prediction = state3ToPrediction(body.doc_id, body.chapter_id, body.state3)
+  const document = await getDocument(body.doc_id)
+
+  if (!document) {
+    return NextResponse.json({ error: "Document not found" }, { status: 404 })
+  }
+
+  const prediction = body.state3
+    ? state3ToPrediction(body.doc_id, body.chapter_id, body.state3)
+    : await importFirebaseState3Prediction(document, body.chapter_id)
   await savePrediction(prediction)
 
   return NextResponse.json({ prediction })

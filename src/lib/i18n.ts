@@ -91,6 +91,8 @@ export const translations = {
     fixedSize: "Fixed-size",
     runEvaluation: "평가 실행",
     state3Import: "STATE.3 가져오기",
+    loadState3FromFirebase: "Firebase STATE.3 불러오기",
+    state3FirebaseHint: "선택한 챕터의 Firebase run에서 STATE.3 결과를 바로 가져옵니다. JSON 붙여넣기는 수동 fallback입니다.",
     json: "JSON",
     importPrediction: "예측 가져오기",
     savedPredictions: "저장된 예측",
@@ -248,6 +250,9 @@ export const translations = {
     fixedSize: "Fixed-size",
     runEvaluation: "Run evaluation",
     state3Import: "STATE.3 Import",
+    loadState3FromFirebase: "Load Firebase STATE.3",
+    state3FirebaseHint:
+      "Load STATE.3 directly from the selected chapter's Firebase run. JSON paste remains as a manual fallback.",
     json: "JSON",
     importPrediction: "Import prediction",
     savedPredictions: "Saved Predictions",

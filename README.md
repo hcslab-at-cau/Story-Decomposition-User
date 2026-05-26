@@ -27,13 +27,23 @@ The UI supports Korean and English. Korean is the default language on first load
 - `/admin/documents`: upload EPUB/plain text, import Firestore documents, and inspect available chapters.
 - `/admin/pipeline`: build consensus, generate fixed-size predictions, import `STATE.3` JSON, and run evaluation.
 - `/admin/dashboard`: monitor annotator progress and inspect result tables.
-- `/annotate`: user-facing sentence-click boundary annotation workspace.
+- `/annotate`: user-facing paragraph-level boundary annotation workspace.
 
 ## Study Login
 
 Local participant credentials live in `secrets/users.json`. The directory is intentionally git-ignored because it contains the 4-digit passwords used by the study login.
 
 The first pass creates five user accounts: `user01`, `user02`, `user03`, `user04`, and `user05`.
+
+For deployment, set `STUDY_USERS_JSON` as a server-side environment variable with the same JSON shape:
+
+```json
+{"users":[{"id":"user01","password":"1234","role":"user","display_name":"Participant 01"}]}
+```
+
+Do not use a `NEXT_PUBLIC_` prefix for this value.
+
+On Vercel, add `STUDY_USERS_JSON` under Project Settings -> Environment Variables for the environments you deploy to, then redeploy. Locally, `secrets/users.json` remains the fallback when `STUDY_USERS_JSON` is not set.
 
 ## Firebase Import
 
@@ -48,11 +58,33 @@ Set one of these server-side credential options before running the app:
 - `FIREBASE_SERVICE_ACCOUNT_BASE64`
 - `FIREBASE_CLIENT_EMAIL` + `FIREBASE_PRIVATE_KEY` + `FIREBASE_PROJECT_ID`
 
-Imported Firestore chapters are normalized into the local `NarrativeDocument` shape and saved under `data/documents`.
+Imported Firestore chapters are normalized into the app's `NarrativeDocument` shape and saved through the configured study data store.
+
+## Deployment Storage
+
+On Vercel, the app stores study data in Firestore instead of writing to local files. This covers imported documents, uploaded document JSON, annotations, consensus gold, predictions, and the latest evaluation bundle.
+
+Set these server-side environment variables:
+
+- `STUDY_DATA_STORE=firebase`
+- `STUDY_FIRESTORE_PREFIX=scene_chunking_eval` (optional; this is the default)
+- Firebase Admin credentials from the Firebase section above
+
+Firestore collections are created with the prefix:
+
+- `scene_chunking_eval_documents`
+- `scene_chunking_eval_annotations`
+- `scene_chunking_eval_consensus`
+- `scene_chunking_eval_predictions`
+- `scene_chunking_eval_results`
+
+Local development still uses `data/` unless `STUDY_DATA_STORE=firebase` or `DATA_STORE=firebase` is set. On Vercel, Firestore is used by default because the deployed function filesystem is read-only except for temporary scratch space.
+
+The pipeline page can import `STATE.3` predictions directly from the selected document's Firebase run. The document must have been imported from Firebase so the app can resolve its original `documents_v2/{doc}/chapters/{chapter}/runs` source.
 
 ## Data
 
-Local research artifacts are stored under `data/`:
+When using the local filesystem store, research artifacts are stored under `data/`:
 
 - `data/documents`: imported paragraph/chapter JSON.
 - `data/annotations`: one annotation JSON per annotator/chapter.

@@ -1,6 +1,6 @@
 "use client"
 
-import { CheckCircle2, FileJson, PlayCircle, RefreshCcw, SplitSquareHorizontal } from "lucide-react"
+import { CheckCircle2, CloudDownload, FileJson, PlayCircle, RefreshCcw, SplitSquareHorizontal } from "lucide-react"
 import { FormEvent, useEffect, useMemo, useState } from "react"
 
 import { useLanguage } from "@/components/LanguageProvider"
@@ -118,6 +118,25 @@ export default function AdminPipelinePage() {
     }
   }
 
+  async function importState3FromFirebase() {
+    setStatus(t("importingState3"))
+    try {
+      const response = await fetch("/api/pipeline/state3-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ doc_id: docId, chapter_id: chapterId }),
+      })
+      const data = (await response.json()) as { prediction?: Prediction; error?: string }
+      if (!response.ok || !data.prediction) {
+        throw new Error(data.error ?? t("saveFailed"))
+      }
+      setStatus(`${t("state3Imported")}: ${data.prediction.boundary_before_pids.length} ${t("boundaries")}`)
+      await loadPredictions()
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : t("saveFailed"))
+    }
+  }
+
   async function runEvaluation() {
     setStatus(t("runningEvaluation"))
     const response = await fetch("/api/evaluate", { method: "POST" })
@@ -214,6 +233,11 @@ export default function AdminPipelinePage() {
 
         <form className="card form-grid" onSubmit={importState3}>
           <h2>{t("state3Import")}</h2>
+          <p className="subtle">{t("state3FirebaseHint")}</p>
+          <button className="button" disabled={!docId || !chapterId} onClick={importState3FromFirebase} type="button">
+            <CloudDownload size={18} />
+            {t("loadState3FromFirebase")}
+          </button>
           <label className="field">
             <span>{t("json")}</span>
             <textarea
