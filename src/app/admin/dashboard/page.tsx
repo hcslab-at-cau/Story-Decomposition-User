@@ -1,0 +1,241 @@
+"use client"
+
+import { PlayCircle, RefreshCcw } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+
+import { useLanguage } from "@/components/LanguageProvider"
+import type { EvaluationBundle } from "@/types/evaluation"
+
+interface ProgressRow {
+  doc_id: string
+  document_title: string
+  chapter_id: string
+  chapter_title: string
+  paragraph_count: number
+  annotation_count: number
+  annotators: Array<{
+    annotator_id: string
+    boundary_count: number
+    updated_at: string
+  }>
+  has_consensus: boolean
+  gold_boundary_count: number
+  ambiguous_boundary_count: number
+  prediction_count: number
+}
+
+interface ProgressResponse {
+  summary: {
+    document_count: number
+    chapter_count: number
+    annotation_count: number
+    consensus_count: number
+    prediction_count: number
+  }
+  chapters: ProgressRow[]
+}
+
+export default function AdminDashboardPage() {
+  const { t } = useLanguage()
+  const [progress, setProgress] = useState<ProgressResponse | null>(null)
+  const [evaluation, setEvaluation] = useState<EvaluationBundle | null>(null)
+  const [status, setStatus] = useState("")
+
+  const meanHumanF1 = useMemo(() => {
+    if (!evaluation?.human_agreement.length) return null
+    const sum = evaluation.human_agreement.reduce((total, row) => total + row.tolerance_1_f1, 0)
+    return sum / evaluation.human_agreement.length
+  }, [evaluation])
+
+  async function loadProgress() {
+    const response = await fetch("/api/progress")
+    const data = (await response.json()) as ProgressResponse
+    setProgress(data)
+  }
+
+  async function runEvaluation() {
+    setStatus(t("runningEvaluation"))
+    const response = await fetch("/api/evaluate", { method: "POST" })
+    const data = (await response.json()) as { evaluation: EvaluationBundle }
+    setEvaluation(data.evaluation)
+    setStatus(`${t("evaluationComplete")}: ${data.evaluation.method_results.length}`)
+    await loadProgress()
+  }
+
+  useEffect(() => {
+    loadProgress().catch(() => setStatus(t("couldNotLoadProgress")))
+    fetch("/api/evaluate")
+      .then((response) => response.json())
+      .then((data: { evaluation: EvaluationBundle }) => setEvaluation(data.evaluation))
+      .catch(() => undefined)
+  }, [t])
+
+  const summary = progress?.summary
+
+  return (
+    <>
+      <div className="topline">
+        <div>
+          <h1>{t("dashboardTitle")}</h1>
+          <p className="subtle">{t("dashboardSubtitle")}</p>
+        </div>
+        <div className="toolbar">
+          <button className="button secondary" onClick={() => loadProgress()} type="button">
+            <RefreshCcw size={17} />
+            {t("refresh")}
+          </button>
+          <button className="button" onClick={runEvaluation} type="button">
+            <PlayCircle size={17} />
+            {t("evaluate")}
+          </button>
+        </div>
+      </div>
+
+      <section className="grid three">
+        <Stat label={t("chapters")} value={summary?.chapter_count ?? 0} />
+        <Stat label={t("annotations")} value={summary?.annotation_count ?? 0} />
+        <Stat label={t("humanF1")} value={meanHumanF1 === null ? "-" : meanHumanF1.toFixed(2)} />
+      </section>
+
+      {status ? (
+        <div className="notice" style={{ marginTop: 16 }}>
+          {status}
+        </div>
+      ) : null}
+
+      <section className="card" style={{ marginTop: 16 }}>
+        <h2>{t("annotatorProgress")}</h2>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>{t("chapter")}</th>
+                <th>{t("annotators")}</th>
+                <th>{t("consensus")}</th>
+                <th>{t("predictions")}</th>
+                <th>{t("status")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {progress?.chapters.map((chapter) => (
+                <tr key={`${chapter.doc_id}-${chapter.chapter_id}`}>
+                  <td>
+                    <strong>{chapter.document_title}</strong>
+                    <div className="subtle">
+                      {chapter.chapter_id}: {chapter.chapter_title}
+                    </div>
+                    <div className="subtle">
+                      {chapter.paragraph_count} {t("paragraphs").toLowerCase()}
+                    </div>
+                  </td>
+                  <td>
+                    {chapter.annotators.length === 0 ? (
+                      <span className="pill warn">{t("noAnnotations")}</span>
+                    ) : (
+                      chapter.annotators.map((annotator) => (
+                        <div key={annotator.annotator_id}>
+                          {annotator.annotator_id}: {annotator.boundary_count} {t("boundaries")}
+                        </div>
+                      ))
+                    )}
+                  </td>
+                  <td>
+                    {chapter.has_consensus ? (
+                      <span className="pill">
+                        {chapter.gold_boundary_count} {t("gold")}
+                      </span>
+                    ) : (
+                      <span className="pill warn">{t("missing")}</span>
+                    )}
+                    {chapter.ambiguous_boundary_count ? (
+                      <div className="subtle">
+                        {chapter.ambiguous_boundary_count} {t("ambiguous")}
+                      </div>
+                    ) : null}
+                  </td>
+                  <td>{chapter.prediction_count}</td>
+                  <td>
+                    {chapter.annotation_count >= 3 && chapter.has_consensus && chapter.prediction_count > 0 ? (
+                      <span className="pill">{t("ready")}</span>
+                    ) : (
+                      <span className="pill blue">{t("inProgress")}</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="grid two" style={{ marginTop: 16 }}>
+        <div className="card">
+          <h2>{t("methodResults")}</h2>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t("method")}</th>
+                  <th>{t("chapter")}</th>
+                  <th>{t("exactF1")}</th>
+                  <th>F1 +/-1</th>
+                  <th>{t("sceneError")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {evaluation?.method_results.map((result) => (
+                  <tr key={result.prediction_id}>
+                    <td>{result.label}</td>
+                    <td>
+                      {result.doc_id}/{result.chapter_id}
+                    </td>
+                    <td>{result.exact.f1.toFixed(3)}</td>
+                    <td>{result.tolerance_1.f1.toFixed(3)}</td>
+                    <td>{result.scene_count_error}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="card">
+          <h2>{t("humanAgreement")}</h2>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t("pair")}</th>
+                  <th>{t("chapter")}</th>
+                  <th>F1 +/-1</th>
+                </tr>
+              </thead>
+              <tbody>
+                {evaluation?.human_agreement.map((row) => (
+                  <tr key={`${row.doc_id}-${row.chapter_id}-${row.annotator_a}-${row.annotator_b}`}>
+                    <td>
+                      {row.annotator_a} / {row.annotator_b}
+                    </td>
+                    <td>
+                      {row.doc_id}/{row.chapter_id}
+                    </td>
+                    <td>{row.tolerance_1_f1.toFixed(3)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </>
+  )
+}
+
+function Stat({ label, value }: { label: string; value: number | string }) {
+  return (
+    <article className="card stat">
+      <span className="subtle">{label}</span>
+      <strong>{value}</strong>
+    </article>
+  )
+}
