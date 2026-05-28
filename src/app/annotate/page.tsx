@@ -8,15 +8,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { LanguageSelect } from "@/components/LanguageSelect"
 import { useLanguage } from "@/components/LanguageProvider"
-import type { TranslationKey } from "@/lib/i18n"
-import type { Annotation, BoundaryReason } from "@/types/annotation"
+import type { Language, TranslationKey } from "@/lib/i18n"
+import type { Annotation, BoundaryReason, BoundaryReasonFlag } from "@/types/annotation"
 import type { DatasetTaskSummary, NarrativeDocument, Paragraph } from "@/types/document"
 import type { DeviceInfo, ReadingEvent, StudyCondition, StudyLocation } from "@/types/study-results"
 
-const reasonOptions: BoundaryReason[] = ["cast_change", "place_change", "time_change", "other"]
+const reasonOptions: BoundaryReason[] = ["place_change", "time_change", "cast_change", "other"]
 const studyConditions: StudyCondition[] = ["control", "on_demand", "auto_trigger"]
 const DEFAULT_STUDY_ID = process.env.NEXT_PUBLIC_STUDY_ID ?? "scene_boundary_annotation_v1"
 const DEFAULT_STUDY_CONDITION = normalizeStudyCondition(process.env.NEXT_PUBLIC_STUDY_CONDITION) ?? "control"
+const DATASET_VERSION = "B_20260528_v1"
+const GUIDELINE_VERSION = "annotation_guideline_20260528_v1"
+const UI_VERSION = "annotation_site_20260528_v1"
 
 const reasonLabelKeys: Record<BoundaryReason, TranslationKey> = {
   cast_change: "reason_cast_change",
@@ -26,10 +29,17 @@ const reasonLabelKeys: Record<BoundaryReason, TranslationKey> = {
 }
 
 const reasonColors: Record<BoundaryReason, { color: string; soft: string }> = {
-  cast_change: { color: "#b45309", soft: "rgba(180, 83, 9, 0.13)" },
   place_change: { color: "#2563eb", soft: "rgba(37, 99, 235, 0.12)" },
   time_change: { color: "#7c3aed", soft: "rgba(124, 58, 237, 0.12)" },
+  cast_change: { color: "#b45309", soft: "rgba(180, 83, 9, 0.13)" },
   other: { color: "#64748b", soft: "rgba(100, 116, 139, 0.14)" },
+}
+
+const reasonFlagByReason: Record<BoundaryReason, BoundaryReasonFlag> = {
+  place_change: "PLACE_SHIFT",
+  time_change: "TIME_SHIFT",
+  cast_change: "CAST_SHIFT",
+  other: "OTHER",
 }
 
 interface ParagraphBoundary {
@@ -48,7 +58,7 @@ interface ClientStudySession {
 
 export default function AnnotatePage() {
   const router = useRouter()
-  const { t } = useLanguage()
+  const { language, t } = useLanguage()
   const [annotatorId, setAnnotatorId] = useState("")
   const [displayName, setDisplayName] = useState("")
   const [identityRole, setIdentityRole] = useState<"user" | "admin" | null>(null)
@@ -416,13 +426,37 @@ export default function AnnotatePage() {
   }
 
   async function saveAnnotation() {
-    if (!docId || !chapterId || !annotatorId) return
+    if (!docId || !chapterId || !annotatorId || !selectedTask || !chapter) return
+
+    const boundariesMissingReasons = selectedBoundaries.filter(
+      (boundary) => (reasons[String(boundary.pid)] ?? []).length === 0,
+    )
+
+    if (boundariesMissingReasons.length > 0) {
+      setStatus(t("missingBoundaryReasons"))
+      return
+    }
+
+    if (!window.confirm(t("submitAnnotationConfirm", { count: selectedBoundaries.length }))) {
+      return
+    }
+
     setStatus(t("saving"))
+    const submittedAt = new Date().toISOString()
+    const startedAt = studySession?.startTime ?? submittedAt
+    const durationMs = Math.max(0, Date.parse(submittedAt) - Date.parse(startedAt))
+    const textId = selectedTask.task_id
+    const boundaryReasonFlags = mapReasonFlagsByPids(reasons, selectedBoundaryPids)
     const boundaryPoints = selectedBoundaries.map((boundary) => ({
       pid: boundary.pid,
       boundary_before_pid: boundary.pid,
       paragraph_index: boundary.paragraph_index,
       paragraph_text: boundary.text,
+      gap_id: boundaryGapId(textId, boundary, paragraphs),
+      prev_para_id: previousParagraphId(textId, boundary, paragraphs),
+      start_para_id: paragraphId(textId, boundary.pid),
+      start_para_order: boundary.paragraph_index,
+      reason_flags: boundaryReasonFlags[String(boundary.pid)] ?? [],
     }))
 
     const response = await fetch("/api/annotations", {
@@ -431,11 +465,22 @@ export default function AnnotatePage() {
       body: JSON.stringify({
         doc_id: docId,
         chapter_id: chapterId,
+        text_id: textId,
         annotator_id: annotatorId,
+        started_at: startedAt,
+        submitted_at: submittedAt,
+        duration_ms: durationMs,
+        status: "submitted",
+        dataset_version: DATASET_VERSION,
+        guideline_version: GUIDELINE_VERSION,
+        ui_version: UI_VERSION,
+        boundary_count: selectedBoundaryPids.length,
+        paragraph_count: chapter.paragraphs.length,
         boundary_before_pids: selectedBoundaryPids,
         boundary_sentence_ids: [],
         boundary_points: boundaryPoints,
         boundary_reasons: pickRecordByPids(reasons, selectedBoundaryPids),
+        boundary_reason_flags: boundaryReasonFlags,
         notes: pickRecordByPids(notes, selectedBoundaryPids),
         study_session: studySession
           ? {
@@ -536,7 +581,7 @@ export default function AnnotatePage() {
                 {selectable ? (
                   <span className="scene-boundary-line" aria-hidden="true">
                     <span className="scene-boundary-label">
-                      {selected ? reasonSummary(selectedReasons, t) : t("sceneStartPreview")}
+                      {selected ? reasonSummary(selectedReasons, language, t) : t("sceneStartPreview")}
                     </span>
                   </span>
                 ) : null}
@@ -559,7 +604,7 @@ export default function AnnotatePage() {
 
         <button className="button" onClick={saveAnnotation} type="button">
           <Save size={18} />
-          {t("save")}
+          {t("submit")}
         </button>
 
         {status ? (
@@ -802,13 +847,66 @@ function reasonChipStyle(reason: BoundaryReason): BoundaryCssProperties {
 
 function reasonSummary(
   reasons: BoundaryReason[],
+  language: Language,
   t: (key: TranslationKey, values?: Record<string, string | number>) => string,
 ) {
   if (reasons.length === 0) {
     return t("sceneStartsHere")
   }
 
-  return reasons.map((reason) => t(reasonLabelKeys[reason])).join(" · ")
+  const orderedReasons = sortReasons(reasons)
+
+  if (language === "ko") {
+    const reasonNames: Record<BoundaryReason, string> = {
+      place_change: "장소",
+      time_change: "시간",
+      cast_change: "등장인물",
+      other: "기타",
+    }
+
+    return `${orderedReasons.map((reason) => reasonNames[reason]).join(", ")} 변화`
+  }
+
+  const reasonNames: Record<BoundaryReason, string> = {
+    place_change: "Place",
+    time_change: "Time",
+    cast_change: "Cast",
+    other: "Other",
+  }
+
+  return `${orderedReasons.map((reason) => reasonNames[reason]).join(", ")} change`
+}
+
+function mapReasonFlagsByPids(record: Record<string, BoundaryReason[]>, pids: number[]) {
+  const picked: Record<string, BoundaryReasonFlag[]> = {}
+
+  for (const pid of pids) {
+    const key = String(pid)
+    const boundaryReasons = record[key]
+
+    if (boundaryReasons?.length) {
+      picked[key] = sortReasons(boundaryReasons).map((reason) => reasonFlagByReason[reason])
+    }
+  }
+
+  return picked
+}
+
+function paragraphId(textId: string, pid: number) {
+  return `${textId}_P${String(pid).padStart(3, "0")}`
+}
+
+function previousParagraphId(textId: string, boundary: ParagraphBoundary, paragraphs: Paragraph[]) {
+  const index = paragraphs.findIndex((paragraph) => paragraph.pid === boundary.pid)
+  const previousParagraph = index > 0 ? paragraphs[index - 1] : undefined
+
+  return previousParagraph ? paragraphId(textId, previousParagraph.pid) : undefined
+}
+
+function boundaryGapId(textId: string, boundary: ParagraphBoundary, paragraphs: Paragraph[]) {
+  const previousId = previousParagraphId(textId, boundary, paragraphs)
+
+  return previousId ? `${previousId}__${paragraphId(textId, boundary.pid)}` : undefined
 }
 
 function pickRecordByPids<T>(record: Record<string, T>, pids: number[]) {

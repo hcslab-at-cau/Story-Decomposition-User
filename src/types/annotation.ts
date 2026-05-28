@@ -4,18 +4,37 @@ export type BoundaryReason =
   | "cast_change"
   | "other"
 
+export type BoundaryReasonFlag = "PLACE_SHIFT" | "TIME_SHIFT" | "CAST_SHIFT" | "OTHER"
+
+export type AnnotationStatus = "draft" | "submitted"
+
 export interface Annotation {
   annotation_id: string
   doc_id: string
   chapter_id: string
+  text_id?: string
   annotator_id: string
   created_at: string
   updated_at: string
+  started_at?: string
+  submitted_at?: string
+  duration_ms?: number
+  status?: AnnotationStatus
+  dataset_version?: string
+  guideline_version?: string
+  ui_version?: string
+  boundary_count?: number
+  paragraph_count?: number
   boundary_before_pids: number[]
   boundary_sentence_ids?: string[]
   boundary_points?: Array<{
     sentence_id?: string
     pid: number
+    gap_id?: string
+    prev_para_id?: string
+    start_para_id?: string
+    start_para_order?: number
+    reason_flags?: BoundaryReasonFlag[]
     sentence_index?: number
     global_sentence_index?: number
     sentence_text?: string
@@ -25,6 +44,7 @@ export interface Annotation {
     paragraph_text?: string
   }>
   boundary_reasons: Record<string, BoundaryReason[]>
+  boundary_reason_flags?: Record<string, BoundaryReasonFlag[]>
   notes: Record<string, string>
 }
 

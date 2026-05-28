@@ -1,6 +1,6 @@
 "use client"
 
-import { PlayCircle, RefreshCcw } from "lucide-react"
+import { Download, PlayCircle, RefreshCcw } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 
 import { useLanguage } from "@/components/LanguageProvider"
@@ -142,6 +142,14 @@ export default function AdminDashboardPage() {
           <p className="subtle">{t("dashboardSubtitle")}</p>
         </div>
         <div className="toolbar">
+          <a className="button secondary" href="/api/annotations/export?type=boundaries">
+            <Download size={17} />
+            {t("exportBoundariesCsv")}
+          </a>
+          <a className="button secondary" href="/api/annotations/export?type=submissions">
+            <Download size={17} />
+            {t("exportSubmissionsCsv")}
+          </a>
           <button className="button secondary" onClick={() => loadProgress()} type="button">
             <RefreshCcw size={17} />
             {t("refresh")}
