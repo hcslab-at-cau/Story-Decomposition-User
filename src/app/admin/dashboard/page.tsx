@@ -51,11 +51,30 @@ export default function AdminDashboardPage() {
   const [selectedParticipantId, setSelectedParticipantId] = useState("")
   const [status, setStatus] = useState("")
 
+  const targetChapterKeys = useMemo(
+    () => new Set((progress?.chapters ?? []).map((chapter) => chapterKey(chapter.doc_id, chapter.chapter_id))),
+    [progress],
+  )
+  const targetChaptersReady = targetChapterKeys.size > 0
+  const visibleMethodResults = useMemo(() => {
+    if (!evaluation || !targetChaptersReady) return []
+
+    return evaluation.method_results.filter((result) =>
+      targetChapterKeys.has(chapterKey(result.doc_id, result.chapter_id)),
+    )
+  }, [evaluation, targetChapterKeys, targetChaptersReady])
+  const visibleHumanAgreement = useMemo(() => {
+    if (!evaluation || !targetChaptersReady) return []
+
+    return evaluation.human_agreement.filter((row) =>
+      targetChapterKeys.has(chapterKey(row.doc_id, row.chapter_id)),
+    )
+  }, [evaluation, targetChapterKeys, targetChaptersReady])
   const meanHumanF1 = useMemo(() => {
-    if (!evaluation?.human_agreement.length) return null
-    const sum = evaluation.human_agreement.reduce((total, row) => total + row.tolerance_1_f1, 0)
-    return sum / evaluation.human_agreement.length
-  }, [evaluation])
+    if (!visibleHumanAgreement.length) return null
+    const sum = visibleHumanAgreement.reduce((total, row) => total + row.tolerance_1_f1, 0)
+    return sum / visibleHumanAgreement.length
+  }, [visibleHumanAgreement])
 
   const activeParticipantId = selectedParticipantId || "all"
   const participants = progress?.participants ?? []
@@ -267,7 +286,7 @@ export default function AdminDashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {evaluation?.method_results.map((result) => (
+                {visibleMethodResults.map((result) => (
                   <tr key={result.prediction_id}>
                     <td>{result.label}</td>
                     <td>
@@ -295,7 +314,7 @@ export default function AdminDashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {evaluation?.human_agreement.map((row) => (
+                {visibleHumanAgreement.map((row) => (
                   <tr key={`${row.doc_id}-${row.chapter_id}-${row.annotator_a}-${row.annotator_b}`}>
                     <td>
                       {row.annotator_a} / {row.annotator_b}
@@ -338,6 +357,10 @@ function formatLastUpdated(value: string | null, fallback: string) {
     dateStyle: "short",
     timeStyle: "short",
   }).format(date)
+}
+
+function chapterKey(docId: string, chapterId: string) {
+  return `${docId}::${chapterId}`
 }
 
 function Stat({ label, value }: { label: string; value: number | string }) {

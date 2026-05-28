@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 
 import { readStudyUsers } from "@/lib/auth/users"
 import { listAnnotations, listConsensus, listDocuments, listPredictions } from "@/lib/data/fs-store"
+import { buildDatasetTaskSummaries } from "@/lib/study-dataset"
 
 export const runtime = "nodejs"
 
@@ -13,6 +14,16 @@ export async function GET() {
     listPredictions(),
     readStudyUsers().catch(() => []),
   ])
+  const targetTasks = buildDatasetTaskSummaries(documents)
+  const targetKeys = new Set(targetTasks.map((task) => chapterKey(task.doc_id, task.chapter_id)))
+  const targetDocIds = new Set(targetTasks.map((task) => task.doc_id))
+  const targetAnnotations = annotations.filter((annotation) =>
+    targetKeys.has(chapterKey(annotation.doc_id, annotation.chapter_id)),
+  )
+  const targetConsensus = consensus.filter((item) => targetKeys.has(chapterKey(item.doc_id, item.chapter_id)))
+  const targetPredictions = predictions.filter((prediction) =>
+    targetKeys.has(chapterKey(prediction.doc_id, prediction.chapter_id)),
+  )
 
   const participantMap = new Map<string, { id: string; display_name: string }>()
 
@@ -25,7 +36,7 @@ export async function GET() {
       })
     })
 
-  annotations.forEach((annotation) => {
+  targetAnnotations.forEach((annotation) => {
     if (!participantMap.has(annotation.annotator_id)) {
       participantMap.set(annotation.annotator_id, {
         id: annotation.annotator_id,
@@ -36,7 +47,7 @@ export async function GET() {
 
   const participants = Array.from(participantMap.values())
     .map((participant) => {
-      const participantAnnotations = annotations.filter(
+      const participantAnnotations = targetAnnotations.filter(
         (annotation) => annotation.annotator_id === participant.id,
       )
       const lastUpdated = participantAnnotations.reduce<string | null>((latest, annotation) => {
@@ -58,47 +69,49 @@ export async function GET() {
     })
     .sort((left, right) => left.id.localeCompare(right.id, undefined, { numeric: true }))
 
-  const chapters = documents.flatMap((document) =>
-    document.chapters.map((chapter) => {
-      const chapterAnnotations = annotations.filter(
-        (annotation) => annotation.doc_id === document.doc_id && annotation.chapter_id === chapter.chapter_id,
-      )
-      const chapterConsensus = consensus.find(
-        (item) => item.doc_id === document.doc_id && item.chapter_id === chapter.chapter_id,
-      )
-      const chapterPredictions = predictions.filter(
-        (prediction) => prediction.doc_id === document.doc_id && prediction.chapter_id === chapter.chapter_id,
-      )
+  const chapters = targetTasks.map((task) => {
+    const chapterAnnotations = targetAnnotations.filter(
+      (annotation) => annotation.doc_id === task.doc_id && annotation.chapter_id === task.chapter_id,
+    )
+    const chapterConsensus = targetConsensus.find(
+      (item) => item.doc_id === task.doc_id && item.chapter_id === task.chapter_id,
+    )
+    const chapterPredictions = targetPredictions.filter(
+      (prediction) => prediction.doc_id === task.doc_id && prediction.chapter_id === task.chapter_id,
+    )
 
-      return {
-        doc_id: document.doc_id,
-        document_title: document.title,
-        chapter_id: chapter.chapter_id,
-        chapter_title: chapter.title,
-        paragraph_count: chapter.paragraphs.length,
-        annotation_count: chapterAnnotations.length,
-        annotators: chapterAnnotations.map((annotation) => ({
-          annotator_id: annotation.annotator_id,
-          boundary_count: annotation.boundary_before_pids.length,
-          updated_at: annotation.updated_at,
-        })),
-        has_consensus: Boolean(chapterConsensus),
-        gold_boundary_count: chapterConsensus?.gold_boundaries.length ?? 0,
-        ambiguous_boundary_count: chapterConsensus?.ambiguous_boundaries.length ?? 0,
-        prediction_count: chapterPredictions.length,
-      }
-    }),
-  )
+    return {
+      doc_id: task.doc_id,
+      document_title: task.document_title,
+      chapter_id: task.chapter_id,
+      chapter_title: task.chapter_title,
+      paragraph_count: task.paragraph_count,
+      annotation_count: chapterAnnotations.length,
+      annotators: chapterAnnotations.map((annotation) => ({
+        annotator_id: annotation.annotator_id,
+        boundary_count: annotation.boundary_before_pids.length,
+        updated_at: annotation.updated_at,
+      })),
+      has_consensus: Boolean(chapterConsensus),
+      gold_boundary_count: chapterConsensus?.gold_boundaries.length ?? 0,
+      ambiguous_boundary_count: chapterConsensus?.ambiguous_boundaries.length ?? 0,
+      prediction_count: chapterPredictions.length,
+    }
+  })
 
   return NextResponse.json({
     summary: {
-      document_count: documents.length,
+      document_count: targetDocIds.size,
       chapter_count: chapters.length,
-      annotation_count: annotations.length,
-      consensus_count: consensus.length,
-      prediction_count: predictions.length,
+      annotation_count: targetAnnotations.length,
+      consensus_count: targetConsensus.length,
+      prediction_count: targetPredictions.length,
     },
     participants,
     chapters,
   })
+}
+
+function chapterKey(docId: string, chapterId: string) {
+  return `${docId}::${chapterId}`
 }
