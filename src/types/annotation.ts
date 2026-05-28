@@ -2,10 +2,7 @@ export type BoundaryReason =
   | "place_change"
   | "time_change"
   | "cast_change"
-  | "event_or_goal_change"
-  | "narrative_focus_change"
   | "other"
-  | "unsure"
 
 export interface Annotation {
   annotation_id: string
@@ -27,7 +24,7 @@ export interface Annotation {
     paragraph_index?: number
     paragraph_text?: string
   }>
-  boundary_reasons: Record<string, BoundaryReason>
+  boundary_reasons: Record<string, BoundaryReason[]>
   notes: Record<string, string>
 }
 

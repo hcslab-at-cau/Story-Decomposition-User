@@ -24,6 +24,14 @@ interface ProgressRow {
   prediction_count: number
 }
 
+interface ParticipantProgress {
+  id: string
+  display_name: string
+  annotation_count: number
+  boundary_count: number
+  last_updated: string | null
+}
+
 interface ProgressResponse {
   summary: {
     document_count: number
@@ -32,6 +40,7 @@ interface ProgressResponse {
     consensus_count: number
     prediction_count: number
   }
+  participants: ParticipantProgress[]
   chapters: ProgressRow[]
 }
 
@@ -39,6 +48,7 @@ export default function AdminDashboardPage() {
   const { t } = useLanguage()
   const [progress, setProgress] = useState<ProgressResponse | null>(null)
   const [evaluation, setEvaluation] = useState<EvaluationBundle | null>(null)
+  const [selectedParticipantId, setSelectedParticipantId] = useState("")
   const [status, setStatus] = useState("")
 
   const meanHumanF1 = useMemo(() => {
@@ -46,6 +56,33 @@ export default function AdminDashboardPage() {
     const sum = evaluation.human_agreement.reduce((total, row) => total + row.tolerance_1_f1, 0)
     return sum / evaluation.human_agreement.length
   }, [evaluation])
+
+  const activeParticipantId = selectedParticipantId || "all"
+  const participants = progress?.participants ?? []
+  const selectedParticipant =
+    activeParticipantId === "all"
+      ? null
+      : participants.find((participant) => participant.id === activeParticipantId) ?? null
+  const participantScoped = activeParticipantId !== "all"
+  const visibleChapters = useMemo(() => {
+    if (!progress) return []
+
+    if (!participantScoped) {
+      return progress.chapters
+    }
+
+    return progress.chapters.map((chapter) => {
+      const annotators = chapter.annotators.filter(
+        (annotator) => annotator.annotator_id === activeParticipantId,
+      )
+
+      return {
+        ...chapter,
+        annotation_count: annotators.length,
+        annotators,
+      }
+    })
+  }, [activeParticipantId, participantScoped, progress])
 
   async function loadProgress() {
     const response = await fetch("/api/progress")
@@ -69,6 +106,12 @@ export default function AdminDashboardPage() {
       .then((data: { evaluation: EvaluationBundle }) => setEvaluation(data.evaluation))
       .catch(() => undefined)
   }, [t])
+
+  useEffect(() => {
+    if (!progress || selectedParticipantId) return
+    const testParticipant = progress.participants.find((participant) => participant.id === "test01")
+    setSelectedParticipantId(testParticipant?.id ?? "all")
+  }, [progress, selectedParticipantId])
 
   const summary = progress?.summary
 
@@ -97,6 +140,41 @@ export default function AdminDashboardPage() {
         <Stat label={t("humanF1")} value={meanHumanF1 === null ? "-" : meanHumanF1.toFixed(2)} />
       </section>
 
+      <section className="card dashboard-filter" style={{ marginTop: 16 }}>
+        <label className="field">
+          <span>{t("viewingAnnotator")}</span>
+          <select
+            className="select"
+            value={activeParticipantId}
+            onChange={(event) => setSelectedParticipantId(event.target.value)}
+          >
+            <option value="all">{t("allAnnotators")}</option>
+            {participants.map((participant) => (
+              <option key={participant.id} value={participant.id}>
+                {participantLabel(participant)}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {selectedParticipant ? (
+          <div className="participant-summary">
+            <div>
+              <span className="subtle">{t("completedDatasets")}</span>
+              <strong>{selectedParticipant.annotation_count}</strong>
+            </div>
+            <div>
+              <span className="subtle">{t("totalBoundaries")}</span>
+              <strong>{selectedParticipant.boundary_count}</strong>
+            </div>
+            <div>
+              <span className="subtle">{t("lastUpdated")}</span>
+              <strong>{formatLastUpdated(selectedParticipant.last_updated, t("notStarted"))}</strong>
+            </div>
+          </div>
+        ) : null}
+      </section>
+
       {status ? (
         <div className="notice" style={{ marginTop: 16 }}>
           {status}
@@ -110,14 +188,14 @@ export default function AdminDashboardPage() {
             <thead>
               <tr>
                 <th>{t("chapter")}</th>
-                <th>{t("annotators")}</th>
+                <th>{participantScoped ? t("annotations") : t("annotators")}</th>
                 <th>{t("consensus")}</th>
                 <th>{t("predictions")}</th>
                 <th>{t("status")}</th>
               </tr>
             </thead>
             <tbody>
-              {progress?.chapters.map((chapter) => (
+              {visibleChapters.map((chapter) => (
                 <tr key={`${chapter.doc_id}-${chapter.chapter_id}`}>
                   <td>
                     <strong>{chapter.document_title}</strong>
@@ -155,7 +233,13 @@ export default function AdminDashboardPage() {
                   </td>
                   <td>{chapter.prediction_count}</td>
                   <td>
-                    {chapter.annotation_count >= 3 && chapter.has_consensus && chapter.prediction_count > 0 ? (
+                    {participantScoped ? (
+                      chapter.annotators.length > 0 ? (
+                        <span className="pill">{t("saved")}</span>
+                      ) : (
+                        <span className="pill warn">{t("notStarted")}</span>
+                      )
+                    ) : chapter.annotation_count >= 3 && chapter.has_consensus && chapter.prediction_count > 0 ? (
                       <span className="pill">{t("ready")}</span>
                     ) : (
                       <span className="pill blue">{t("inProgress")}</span>
@@ -229,6 +313,31 @@ export default function AdminDashboardPage() {
       </section>
     </>
   )
+}
+
+function participantLabel(participant: ParticipantProgress) {
+  if (participant.display_name === participant.id) {
+    return participant.id
+  }
+
+  return `${participant.display_name} (${participant.id})`
+}
+
+function formatLastUpdated(value: string | null, fallback: string) {
+  if (!value) {
+    return fallback
+  }
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return fallback
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date)
 }
 
 function Stat({ label, value }: { label: string; value: number | string }) {

@@ -28,3 +28,14 @@ export interface DocumentSummary {
   paragraph_count: number
   created_at: string
 }
+
+export interface DatasetTaskSummary {
+  task_id: string
+  doc_id: string
+  chapter_id: string
+  label: string
+  document_title: string
+  chapter_title: string
+  paragraph_count: number
+  sort_order: number
+}

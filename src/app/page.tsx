@@ -60,7 +60,6 @@ export default function LoginPage() {
     <main className="login-page">
       <section className="login-panel">
         <LanguageSelect />
-        <div className="eyebrow">{t("loginEyebrow")}</div>
         <h1 className="title">{t("loginTitle")}</h1>
         <p className="subtle">{t("loginSubtitle")}</p>
 

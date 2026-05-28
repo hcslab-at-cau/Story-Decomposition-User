@@ -78,6 +78,29 @@ Firestore collections are created with the prefix:
 - `scene_chunking_eval_predictions`
 - `scene_chunking_eval_results`
 
+User-study result logs are also written to a hierarchical Firestore path:
+
+```text
+studies/{studyId}
+  participants/{participantId}
+    sessions/{sessionId}
+      sessionMeta/current
+      readingEvents/{eventId}
+      scaffoldEvents/{eventId}
+      taskResponses/{responseId}
+      surveyResponses/{responseId}
+```
+
+Defaults:
+
+- `STUDY_ID=scene_boundary_annotation_v1`
+- `STUDY_RESULTS_ROOT=studies`
+- `STUDY_RESULTS_STORE` follows `STUDY_DATA_STORE` unless explicitly set
+- `NEXT_PUBLIC_STUDY_ID=scene_boundary_annotation_v1`
+- `NEXT_PUBLIC_STUDY_CONDITION=control`
+
+The annotation page creates one session per participant/task/browser tab, buffers scroll and boundary interaction events client-side, and flushes them to `readingEvents` in batches. Annotation saves are mirrored to `taskResponses` as `scene_boundary_annotation` while the existing flat annotation store remains available for admin dashboards and evaluation scripts.
+
 Local development still uses `data/` unless `STUDY_DATA_STORE=firebase` or `DATA_STORE=firebase` is set. On Vercel, Firestore is used by default because the deployed function filesystem is read-only except for temporary scratch space.
 
 The pipeline page can import `STATE.3` predictions directly from the selected document's Firebase run. The document must have been imported from Firebase so the app can resolve its original `documents_v2/{doc}/chapters/{chapter}/runs` source.

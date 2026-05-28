@@ -69,6 +69,10 @@ button {
   padding: 28px;
 }
 
+.login-panel > .field:first-child {
+  margin-bottom: 24px;
+}
+
 .eyebrow {
   color: var(--accent-strong);
   font-size: 12px;
@@ -290,6 +294,28 @@ button {
   gap: 10px;
 }
 
+.dashboard-filter {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: end;
+}
+
+.participant-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.participant-summary > div {
+  display: grid;
+  gap: 6px;
+}
+
+.participant-summary strong {
+  font-size: 20px;
+}
+
 .table-wrap {
   overflow-x: auto;
 }
@@ -353,7 +379,7 @@ th {
 
 .reader-controls {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr);
+  grid-template-columns: minmax(260px, 520px);
   gap: 14px;
   max-width: 920px;
   margin-bottom: 14px;
@@ -405,11 +431,11 @@ th {
 }
 
 .paragraph-boundary-target.selected {
-  border-color: rgba(47, 111, 115, 0.45);
+  border-color: color-mix(in srgb, var(--boundary-color, var(--accent)) 54%, var(--line));
   background:
-    linear-gradient(180deg, rgba(47, 111, 115, 0.11), rgba(255, 255, 255, 0) 34px),
+    linear-gradient(180deg, var(--boundary-soft, rgba(47, 111, 115, 0.11)), rgba(255, 255, 255, 0) 38px),
     var(--panel);
-  box-shadow: inset 4px 0 0 var(--accent);
+  box-shadow: inset 4px 0 0 var(--boundary-color, var(--accent));
 }
 
 .scene-boundary-line {
@@ -450,12 +476,16 @@ th {
 
 .paragraph-boundary-target.selected .scene-boundary-line {
   border-top-style: solid;
+  border-top: 0;
+  height: 3px;
+  background: var(--boundary-gradient, var(--boundary-color, var(--accent)));
 }
 
 .paragraph-boundary-target.selected .scene-boundary-label {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--boundary-gradient, var(--boundary-color, var(--accent)));
+  border-color: transparent;
   color: #fff;
+  transform: translateY(0);
 }
 
 .paragraph-text {
@@ -541,6 +571,54 @@ th {
   gap: 10px;
 }
 
+.reason-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 12px 0 0;
+  border: 0;
+  padding: 0;
+}
+
+.reason-field legend {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 0;
+}
+
+.reason-checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.reason-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 7px 9px;
+}
+
+.reason-chip.checked {
+  border-color: color-mix(in srgb, var(--reason-color) 60%, var(--line));
+  background: var(--reason-soft);
+  color: var(--reason-color);
+}
+
+.reason-chip input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--reason-color);
+}
+
 .selected-paragraph-preview {
   margin: 8px 0 0;
   color: var(--muted);
@@ -590,8 +668,13 @@ th {
   .shell,
   .annotate-shell,
   .reader-controls,
+  .dashboard-filter,
   .grid.two,
   .grid.three {
+    grid-template-columns: 1fr;
+  }
+
+  .participant-summary {
     grid-template-columns: 1fr;
   }
 

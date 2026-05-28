@@ -12,6 +12,7 @@ import {
   uploadPath,
 } from "@/lib/data/fs-store"
 import { epubToDocument, textToDocument } from "@/lib/epub"
+import { buildDatasetTaskSummaries } from "@/lib/study-dataset"
 import type { NarrativeDocument } from "@/types/document"
 
 export const runtime = "nodejs"
@@ -42,6 +43,7 @@ export async function GET(request: Request) {
       paragraph_count: document.chapters.reduce((sum, chapter) => sum + chapter.paragraphs.length, 0),
       created_at: document.created_at,
     })),
+    dataset_tasks: buildDatasetTaskSummaries(documents),
   })
 }
 
