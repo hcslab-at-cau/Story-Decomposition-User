@@ -2,11 +2,16 @@ import type { Annotation } from "@/types/annotation"
 import type { HumanAgreementRow } from "@/types/evaluation"
 
 import { boundaryMetrics } from "@/lib/evaluation/boundary-match"
+import { isTestParticipantId } from "@/lib/participants"
 
 export function humanAgreementRows(annotations: Annotation[]): HumanAgreementRow[] {
   const grouped = new Map<string, Annotation[]>()
 
   for (const annotation of annotations) {
+    if (isTestParticipantId(annotation.annotator_id)) {
+      continue
+    }
+
     const key = `${annotation.doc_id}__${annotation.chapter_id}`
     grouped.set(key, [...(grouped.get(key) ?? []), annotation])
   }

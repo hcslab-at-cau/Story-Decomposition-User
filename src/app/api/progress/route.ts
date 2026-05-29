@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 
 import { readStudyUsers } from "@/lib/auth/users"
 import { listAnnotations, listConsensus, listDocuments, listPredictions } from "@/lib/data/fs-store"
+import { isTestParticipantId } from "@/lib/participants"
 import { buildDatasetTaskSummaries } from "@/lib/study-dataset"
 
 export const runtime = "nodejs"
@@ -23,6 +24,9 @@ export async function GET() {
   const targetConsensus = consensus.filter((item) => targetKeys.has(chapterKey(item.doc_id, item.chapter_id)))
   const targetPredictions = predictions.filter((prediction) =>
     targetKeys.has(chapterKey(prediction.doc_id, prediction.chapter_id)),
+  )
+  const reportAnnotations = targetAnnotations.filter(
+    (annotation) => !isTestParticipantId(annotation.annotator_id),
   )
 
   const participantMap = new Map<string, { id: string; display_name: string }>()
@@ -103,7 +107,7 @@ export async function GET() {
     summary: {
       document_count: targetDocIds.size,
       chapter_count: chapters.length,
-      annotation_count: targetAnnotations.length,
+      annotation_count: reportAnnotations.length,
       consensus_count: targetConsensus.length,
       prediction_count: targetPredictions.length,
     },

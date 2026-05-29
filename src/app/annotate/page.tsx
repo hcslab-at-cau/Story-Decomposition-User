@@ -1,7 +1,6 @@
 "use client"
 
-import { LogOut, Save, UserCog } from "lucide-react"
-import Link from "next/link"
+import { LogOut, Save } from "lucide-react"
 import { useRouter } from "next/navigation"
 import type { CSSProperties } from "react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -61,7 +60,6 @@ export default function AnnotatePage() {
   const { language, t } = useLanguage()
   const [annotatorId, setAnnotatorId] = useState("")
   const [displayName, setDisplayName] = useState("")
-  const [identityRole, setIdentityRole] = useState<"user" | "admin" | null>(null)
   const [tasks, setTasks] = useState<DatasetTaskSummary[]>([])
   const [document, setDocument] = useState<NarrativeDocument | null>(null)
   const [taskId, setTaskId] = useState("")
@@ -164,7 +162,6 @@ export default function AnnotatePage() {
           id?: string
           name?: string
           displayName?: string
-          role?: "user" | "admin"
         })
       : null
     const fromQuery = url.searchParams.get("annotatorId")
@@ -177,7 +174,6 @@ export default function AnnotatePage() {
 
     setAnnotatorId(resolvedId)
     setDisplayName(fromQuery ? resolvedId : identity?.displayName ?? resolvedId)
-    setIdentityRole(identity?.role ?? null)
     setCondition(normalizeStudyCondition(url.searchParams.get("condition")) ?? DEFAULT_STUDY_CONDITION)
 
     fetch("/api/documents")
@@ -517,12 +513,6 @@ export default function AnnotatePage() {
           </div>
           <div className="toolbar">
             <LanguageSelect />
-            {identityRole === "admin" ? (
-              <Link className="button secondary" href="/admin">
-                <UserCog size={17} />
-                {t("admin")}
-              </Link>
-            ) : null}
             <button className="button secondary" onClick={logout} type="button">
               <LogOut size={17} />
               {t("logout")}

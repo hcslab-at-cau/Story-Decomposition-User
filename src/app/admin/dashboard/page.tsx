@@ -4,6 +4,7 @@ import { Download, PlayCircle, RefreshCcw } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 
 import { useLanguage } from "@/components/LanguageProvider"
+import { isTestParticipantId } from "@/lib/participants"
 import type { EvaluationBundle } from "@/types/evaluation"
 
 interface ProgressRow {
@@ -44,6 +45,10 @@ interface ProgressResponse {
   chapters: ProgressRow[]
 }
 
+const ALL_PARTICIPANTS_VALUE = "all"
+const CORE_PARTICIPANTS_VALUE = "user01-05"
+const CORE_PARTICIPANT_IDS = ["user01", "user02", "user03", "user04", "user05"]
+
 export default function AdminDashboardPage() {
   const { t } = useLanguage()
   const [progress, setProgress] = useState<ProgressResponse | null>(null)
@@ -66,8 +71,11 @@ export default function AdminDashboardPage() {
   const visibleHumanAgreement = useMemo(() => {
     if (!evaluation || !targetChaptersReady) return []
 
-    return evaluation.human_agreement.filter((row) =>
-      targetChapterKeys.has(chapterKey(row.doc_id, row.chapter_id)),
+    return evaluation.human_agreement.filter(
+      (row) =>
+        targetChapterKeys.has(chapterKey(row.doc_id, row.chapter_id)) &&
+        !isTestParticipantId(row.annotator_a) &&
+        !isTestParticipantId(row.annotator_b),
     )
   }, [evaluation, targetChapterKeys, targetChaptersReady])
   const meanHumanF1 = useMemo(() => {
@@ -76,23 +84,30 @@ export default function AdminDashboardPage() {
     return sum / visibleHumanAgreement.length
   }, [visibleHumanAgreement])
 
-  const activeParticipantId = selectedParticipantId || "all"
+  const activeParticipantId = selectedParticipantId || ALL_PARTICIPANTS_VALUE
   const participants = progress?.participants ?? []
+  const activeParticipantIds = useMemo(() => {
+    if (activeParticipantId === ALL_PARTICIPANTS_VALUE) return null
+    if (activeParticipantId === CORE_PARTICIPANTS_VALUE) return CORE_PARTICIPANT_IDS
+    return [activeParticipantId]
+  }, [activeParticipantId])
   const selectedParticipant =
-    activeParticipantId === "all"
+    activeParticipantId === ALL_PARTICIPANTS_VALUE
       ? null
-      : participants.find((participant) => participant.id === activeParticipantId) ?? null
-  const participantScoped = activeParticipantId !== "all"
+      : activeParticipantId === CORE_PARTICIPANTS_VALUE
+        ? aggregateParticipants(CORE_PARTICIPANTS_VALUE, participants, CORE_PARTICIPANT_IDS)
+        : participants.find((participant) => participant.id === activeParticipantId) ?? null
+  const participantScoped = activeParticipantIds !== null
   const visibleChapters = useMemo(() => {
     if (!progress) return []
 
-    if (!participantScoped) {
+    if (!activeParticipantIds) {
       return progress.chapters
     }
 
     return progress.chapters.map((chapter) => {
       const annotators = chapter.annotators.filter(
-        (annotator) => annotator.annotator_id === activeParticipantId,
+        (annotator) => activeParticipantIds.includes(annotator.annotator_id),
       )
 
       return {
@@ -101,7 +116,7 @@ export default function AdminDashboardPage() {
         annotators,
       }
     })
-  }, [activeParticipantId, participantScoped, progress])
+  }, [activeParticipantIds, progress])
 
   async function loadProgress() {
     const response = await fetch("/api/progress")
@@ -175,7 +190,8 @@ export default function AdminDashboardPage() {
             value={activeParticipantId}
             onChange={(event) => setSelectedParticipantId(event.target.value)}
           >
-            <option value="all">{t("allAnnotators")}</option>
+            <option value={ALL_PARTICIPANTS_VALUE}>{t("allAnnotators")}</option>
+            <option value={CORE_PARTICIPANTS_VALUE}>{t("coreAnnotatorGroup")}</option>
             {participants.map((participant) => (
               <option key={participant.id} value={participant.id}>
                 {participantLabel(participant)}
@@ -348,6 +364,26 @@ function participantLabel(participant: ParticipantProgress) {
   }
 
   return `${participant.display_name} (${participant.id})`
+}
+
+function aggregateParticipants(id: string, participants: ParticipantProgress[], participantIds: string[]) {
+  const participantIdSet = new Set(participantIds)
+  const selectedParticipants = participants.filter((participant) => participantIdSet.has(participant.id))
+
+  return {
+    id,
+    display_name: id,
+    annotation_count: selectedParticipants.reduce(
+      (total, participant) => total + participant.annotation_count,
+      0,
+    ),
+    boundary_count: selectedParticipants.reduce((total, participant) => total + participant.boundary_count, 0),
+    last_updated: selectedParticipants.reduce<string | null>((latest, participant) => {
+      if (!participant.last_updated) return latest
+      if (!latest || participant.last_updated > latest) return participant.last_updated
+      return latest
+    }, null),
+  }
 }
 
 function formatLastUpdated(value: string | null, fallback: string) {
