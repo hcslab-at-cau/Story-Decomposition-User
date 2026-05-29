@@ -328,7 +328,7 @@ export default function AdminDashboardPage() {
 
         <div className="card">
           <h2>{t("humanAgreement")}</h2>
-          <div className="table-wrap">
+          <div className="table-wrap dashboard-scroll-table">
             <table>
               <thead>
                 <tr>

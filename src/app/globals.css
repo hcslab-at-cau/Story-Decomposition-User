@@ -320,6 +320,18 @@ button {
   overflow-x: auto;
 }
 
+.dashboard-scroll-table {
+  max-height: min(440px, 56vh);
+  overflow: auto;
+}
+
+.dashboard-scroll-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
