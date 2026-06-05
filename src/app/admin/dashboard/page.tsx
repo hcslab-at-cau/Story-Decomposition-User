@@ -4,7 +4,7 @@ import { Download, PlayCircle, RefreshCcw } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 
 import { useLanguage } from "@/components/LanguageProvider"
-import { isTestParticipantId } from "@/lib/participants"
+import { formatParticipantIdRange, isTestParticipantId } from "@/lib/participants"
 import type { EvaluationBundle } from "@/types/evaluation"
 
 interface ProgressRow {
@@ -41,13 +41,15 @@ interface ProgressResponse {
     consensus_count: number
     prediction_count: number
   }
+  registered_participant_ids: string[]
   participants: ParticipantProgress[]
   chapters: ProgressRow[]
 }
 
 const ALL_PARTICIPANTS_VALUE = "all"
-const CORE_PARTICIPANTS_VALUE = "user01-05"
-const CORE_PARTICIPANT_IDS = ["user01", "user02", "user03", "user04", "user05"]
+const REGISTERED_PARTICIPANTS_VALUE = "registered-users"
+const EMPTY_PARTICIPANTS: ParticipantProgress[] = []
+const EMPTY_REGISTERED_PARTICIPANT_IDS: string[] = []
 
 export default function AdminDashboardPage() {
   const { t } = useLanguage()
@@ -85,17 +87,29 @@ export default function AdminDashboardPage() {
   }, [visibleHumanAgreement])
 
   const activeParticipantId = selectedParticipantId || ALL_PARTICIPANTS_VALUE
-  const participants = progress?.participants ?? []
+  const participants = progress?.participants ?? EMPTY_PARTICIPANTS
+  const accountParticipantIds = progress?.registered_participant_ids ?? EMPTY_REGISTERED_PARTICIPANT_IDS
+  const registeredParticipantIds = useMemo(() => {
+    if (accountParticipantIds.length > 0) {
+      return accountParticipantIds
+    }
+
+    return participants
+      .filter((participant) => !isTestParticipantId(participant.id))
+      .map((participant) => participant.id)
+  }, [accountParticipantIds, participants])
+  const registeredParticipantLabel =
+    formatParticipantIdRange(registeredParticipantIds) ?? t("coreAnnotatorGroup")
   const activeParticipantIds = useMemo(() => {
     if (activeParticipantId === ALL_PARTICIPANTS_VALUE) return null
-    if (activeParticipantId === CORE_PARTICIPANTS_VALUE) return CORE_PARTICIPANT_IDS
+    if (activeParticipantId === REGISTERED_PARTICIPANTS_VALUE) return registeredParticipantIds
     return [activeParticipantId]
-  }, [activeParticipantId])
+  }, [activeParticipantId, registeredParticipantIds])
   const selectedParticipant =
     activeParticipantId === ALL_PARTICIPANTS_VALUE
       ? null
-      : activeParticipantId === CORE_PARTICIPANTS_VALUE
-        ? aggregateParticipants(CORE_PARTICIPANTS_VALUE, participants, CORE_PARTICIPANT_IDS)
+      : activeParticipantId === REGISTERED_PARTICIPANTS_VALUE
+        ? aggregateParticipants(REGISTERED_PARTICIPANTS_VALUE, participants, registeredParticipantIds)
         : participants.find((participant) => participant.id === activeParticipantId) ?? null
   const participantScoped = activeParticipantIds !== null
   const visibleChapters = useMemo(() => {
@@ -191,7 +205,9 @@ export default function AdminDashboardPage() {
             onChange={(event) => setSelectedParticipantId(event.target.value)}
           >
             <option value={ALL_PARTICIPANTS_VALUE}>{t("allAnnotators")}</option>
-            <option value={CORE_PARTICIPANTS_VALUE}>{t("coreAnnotatorGroup")}</option>
+            {registeredParticipantIds.length > 0 ? (
+              <option value={REGISTERED_PARTICIPANTS_VALUE}>{registeredParticipantLabel}</option>
+            ) : null}
             {participants.map((participant) => (
               <option key={participant.id} value={participant.id}>
                 {participantLabel(participant)}

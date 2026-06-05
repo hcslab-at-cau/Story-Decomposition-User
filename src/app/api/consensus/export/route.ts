@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server"
 
-import { getConsensus, getDocument } from "@/lib/data/fs-store"
+import { getConsensus, getDocument, listAnnotations } from "@/lib/data/fs-store"
+import { uniqueSortedNumbers } from "@/lib/ids"
+import { isTestParticipantId } from "@/lib/participants"
+import type { Annotation, AmbiguousBoundary, GoldBoundary } from "@/types/annotation"
 
 export const runtime = "nodejs"
 
@@ -21,6 +24,15 @@ export async function GET(request: Request) {
 
   const document = await getDocument(docId)
   const chapter = document?.chapters.find((item) => item.chapter_id === chapterId)
+  const annotations = (await listAnnotations()).filter(
+    (annotation) =>
+      annotation.doc_id === docId &&
+      annotation.chapter_id === chapterId &&
+      !isTestParticipantId(annotation.annotator_id),
+  )
+  const annotatorIds = Array.from(new Set(annotations.map((annotation) => annotation.annotator_id))).sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true }),
+  )
   const payload = {
     schema: "scene_boundary_gold.v1",
     doc_id: docId,
@@ -29,10 +41,17 @@ export async function GET(request: Request) {
     chapter_title: chapter?.title ?? chapterId,
     paragraph_count: chapter?.paragraphs.length ?? null,
     annotator_count: consensus.annotator_count,
+    evidence_annotator_count: annotatorIds.length,
+    evidence_annotator_ids: annotatorIds,
     tolerance_for_clustering: consensus.tolerance_for_clustering,
     boundary_before_pids: consensus.gold_boundaries.map((boundary) => boundary.boundary_before_pid),
-    gold_boundaries: consensus.gold_boundaries,
-    ambiguous_boundaries: consensus.ambiguous_boundaries,
+    gold_boundaries: consensus.gold_boundaries.map((boundary) =>
+      goldBoundaryWithEvidence(boundary, annotations, annotatorIds),
+    ),
+    ambiguous_boundaries: consensus.ambiguous_boundaries.map((boundary) =>
+      ambiguousBoundaryWithEvidence(boundary, annotations, annotatorIds),
+    ),
+    source_annotations: annotations.map(annotationEvidenceSummary),
     created_at: consensus.created_at,
     exported_at: new Date().toISOString(),
   }
@@ -53,6 +72,88 @@ function safeFileName(value: string) {
     .replace(/[\\/:*?"<>|]+/g, "_")
     .replace(/\s+/g, "_")
     .slice(0, 80)
+}
+
+function goldBoundaryWithEvidence(
+  boundary: GoldBoundary,
+  annotations: Annotation[],
+  annotatorIds: string[],
+) {
+  const evidence = evidenceForPids(boundary.annotator_pids, annotations)
+  const supportingAnnotatorIds = new Set(evidence.map((item) => item.annotator_id))
+
+  return {
+    ...boundary,
+    evidence,
+    supporting_annotator_ids: Array.from(supportingAnnotatorIds).sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true }),
+    ),
+    non_supporting_annotator_ids: annotatorIds.filter((annotatorId) => !supportingAnnotatorIds.has(annotatorId)),
+  }
+}
+
+function ambiguousBoundaryWithEvidence(
+  boundary: AmbiguousBoundary,
+  annotations: Annotation[],
+  annotatorIds: string[],
+) {
+  const evidence = evidenceForPids(boundary.annotator_pids, annotations)
+  const supportingAnnotatorIds = new Set(evidence.map((item) => item.annotator_id))
+
+  return {
+    ...boundary,
+    evidence,
+    supporting_annotator_ids: Array.from(supportingAnnotatorIds).sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true }),
+    ),
+    non_supporting_annotator_ids: annotatorIds.filter((annotatorId) => !supportingAnnotatorIds.has(annotatorId)),
+  }
+}
+
+function annotationEvidenceSummary(annotation: Annotation) {
+  return {
+    annotator_id: annotation.annotator_id,
+    annotation_id: annotation.annotation_id,
+    status: annotation.status ?? null,
+    updated_at: annotation.updated_at,
+    submitted_at: annotation.submitted_at ?? null,
+    boundary_count: annotation.boundary_before_pids.length,
+    boundary_before_pids: annotation.boundary_before_pids,
+    boundaries: uniqueSortedNumbers(annotation.boundary_before_pids).map((pid) =>
+      boundaryEvidence(annotation, pid),
+    ),
+  }
+}
+
+function evidenceForPids(pids: number[], annotations: Annotation[]) {
+  const pidSet = new Set(pids)
+
+  return annotations.flatMap((annotation) =>
+    uniqueSortedNumbers(annotation.boundary_before_pids)
+      .filter((pid) => pidSet.has(pid))
+      .map((pid) => boundaryEvidence(annotation, pid)),
+  )
+}
+
+function boundaryEvidence(annotation: Annotation, pid: number) {
+  const key = String(pid)
+  const boundaryPoint = annotation.boundary_points?.find(
+    (point) => point.pid === pid || point.boundary_before_pid === pid,
+  )
+
+  return {
+    annotator_id: annotation.annotator_id,
+    boundary_before_pid: pid,
+    reasons: annotation.boundary_reasons[key] ?? [],
+    reason_flags: annotation.boundary_reason_flags?.[key] ?? boundaryPoint?.reason_flags ?? [],
+    note: annotation.notes[key] ?? "",
+    paragraph_index: boundaryPoint?.paragraph_index ?? boundaryPoint?.start_para_order ?? null,
+    paragraph_text: boundaryPoint?.paragraph_text ?? null,
+    sentence_id: boundaryPoint?.sentence_id ?? null,
+    sentence_text: boundaryPoint?.sentence_text ?? null,
+    updated_at: annotation.updated_at,
+    boundary_point: boundaryPoint ?? null,
+  }
 }
 
 function safeAsciiFileName(value: string) {

@@ -33,7 +33,7 @@ The UI supports Korean and English. Korean is the default language on first load
 
 Local participant credentials live in `secrets/users.json`. The directory is intentionally git-ignored because it contains the 4-digit passwords used by the study login.
 
-The first pass creates five user accounts: `user01`, `user02`, `user03`, `user04`, and `user05`.
+Add participant accounts with `role: "user"` and keep the researcher account as `role: "admin"`. The admin dashboard derives its registered-user group from these user accounts, excluding any IDs that start with `test`.
 
 For deployment, set `STUDY_USERS_JSON` as a server-side environment variable with the same JSON shape:
 
